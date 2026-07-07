@@ -64,7 +64,7 @@ python3 -m resume_sender --config config.json --from-clipboard
 更省事的方式是复制微信群 JD 后运行：
 
 ```bash
-./生成预览
+./生成邮件
 ```
 
 这个脚本会读取剪贴板、保存到 `inbox/clipboard.txt`，并生成邮件预览。
@@ -72,7 +72,7 @@ python3 -m resume_sender --config config.json --from-clipboard
 打开最新 `.eml` 预览：
 
 ```bash
-./查看预览
+./查看邮件
 ```
 
 等同于：
@@ -92,10 +92,10 @@ export SMTP_PASSWORD="你的邮箱授权码"
 python3 -m resume_sender --config config.json --messages inbox/today.txt --send
 ```
 
-如果刚刚是用 `./生成预览` 生成的预览，确认无误后可以运行：
+如果刚刚是用 `./生成邮件` 生成的预览，确认无误后可以运行：
 
 ```bash
-./确认发送
+./发送邮件
 ```
 
 它会发送 `inbox/clipboard.txt` 对应的那条 JD，不会重新读取剪贴板，避免误发。
