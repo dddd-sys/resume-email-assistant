@@ -100,8 +100,8 @@ def generate_body(config: AppConfig, post: JobPost, match: ResumeMatch) -> tuple
     if config.openai.enabled:
         generated = _generate_body_with_openai(config, post, match)
         if generated:
-            return generated, "ai"
-    return _generate_body_locally(config, post, match), "local_template"
+            return ensure_body_greeting(generated), "ai"
+    return ensure_body_greeting(_generate_body_locally(config, post, match)), "local_template"
 
 
 def _generate_body_with_openai(config: AppConfig, post: JobPost, match: ResumeMatch) -> str | None:
@@ -120,6 +120,7 @@ def _generate_body_with_openai(config: AppConfig, post: JobPost, match: ResumeMa
 请为一封中文求职投递邮件写正文，要求简洁、自然、职业化。
 
 非常重要：
+- 正文第一行必须固定为：hr您好：
 - 必须优先使用“简历原文”里的真实经历、项目、工具、方法、成果来写优势。
 - 每一点优势都要对应 JD 的一个需求，并尽量带出具体经历名称、任务、工具、研究对象或产出。
 - 不要写空泛套话，比如“学习能力强”“沟通高效”“执行力强”，除非能接上简历里的具体证据。
@@ -147,7 +148,7 @@ def _generate_body_with_openai(config: AppConfig, post: JobPost, match: ResumeMa
 {post.raw_text}
 
 正文结构：
-1. 称呼。
+1. 称呼固定写：hr您好：
 2. 说明投递岗位，并用一句话介绍姓名、学校、专业、年级、可以随时到岗、每周到岗时间和实习时长。
 3. 写三点优势，必须严格使用 1. 2. 3. 编号列举。每点都必须是“JD要求 + 简历中的具体经历/能力证据”的组合。
 4. 说明附件已附简历，并礼貌收尾。
@@ -178,7 +179,7 @@ def _generate_body_locally(config: AppConfig, post: JobPost, match: ResumeMatch)
     term_text = "、".join(terms) if terms else match.resume.label
     advantages = _build_advantages(match.resume.label, term_text, match.resume.summary)
     bullets = "\n".join(f"{idx}. {item}" for idx, item in enumerate(advantages, start=1))
-    return f"""您好：
+    return f"""hr您好：
 
 冒昧来信，想投递贵方发布的「{post.title}」岗位。我是{candidate.school}{candidate.major}{candidate.grade}学生{candidate.name}，可{candidate.availability}，{candidate.weekly_attendance}，预计可实习{candidate.duration}。
 
@@ -227,6 +228,22 @@ def clean_ai_body(value: str) -> str:
     value = normalize_advantage_markers(value)
     value = value.replace("*", "")
     return value.strip()
+
+
+def ensure_body_greeting(value: str) -> str:
+    body = value.strip()
+    if not body:
+        return "hr您好："
+
+    lines = body.splitlines()
+    first_content_index = next((idx for idx, line in enumerate(lines) if line.strip()), 0)
+    first_line = lines[first_content_index].strip()
+    greeting_pattern = r"^(?:hr|HR|Hr)?\s*(?:您好|你好|老师您好|招聘负责人您好|尊敬的HR|尊敬的hr)[，,：:！!。.\s]*$"
+    if re.match(greeting_pattern, first_line):
+        lines[first_content_index] = "hr您好："
+    elif first_line != "hr您好：":
+        lines.insert(first_content_index, "hr您好：")
+    return "\n".join(lines).strip()
 
 
 def normalize_advantage_markers(value: str) -> str:

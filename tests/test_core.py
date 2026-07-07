@@ -9,13 +9,22 @@ import unittest
 from resume_sender.cleanup import cleanup_once_files
 from resume_sender.clipboard import save_clipboard_text
 from resume_sender.config import AppConfig, Candidate, EmailConfig, OpenAIConfig, ResumeProfile, load_config
-from resume_sender.email_builder import build_email, clean_ai_body
+from resume_sender.email_builder import build_email, clean_ai_body, ensure_body_greeting
 from resume_sender.parser import parse_job_posts
 from resume_sender.preview import find_latest_preview, render_preview
 from resume_sender.resume import choose_resume
 
 
 class CoreFlowTest(unittest.TestCase):
+    def test_ensure_body_greeting_normalizes_first_line(self) -> None:
+        body = ensure_body_greeting("您好，\n\n我是张三。")
+        self.assertTrue(body.startswith("hr您好："))
+        self.assertNotIn("您好，", body.splitlines()[0])
+
+    def test_ensure_body_greeting_inserts_when_missing(self) -> None:
+        body = ensure_body_greeting("我是张三。")
+        self.assertTrue(body.startswith("hr您好：\n我是张三。"))
+
     def test_find_latest_preview_returns_newest_eml(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             outbox_dir = Path(temp_dir) / "outbox"
@@ -174,6 +183,7 @@ class CoreFlowTest(unittest.TestCase):
         self.assertEqual(built.subject, "AI产品经理实习生-张三-示例大学-随时到岗-6个月及以上")
         self.assertEqual(built.attachment_name, "AI产品经理实习生-张三-示例大学.pdf")
         self.assertIn("AI产品经理实习生", built.body)
+        self.assertTrue(built.body.startswith("hr您好："))
 
     def test_subject_uses_attachment_format_when_subject_format_is_missing(self) -> None:
         text = """
