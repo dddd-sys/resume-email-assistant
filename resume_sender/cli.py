@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 
+from .cleanup import cleanup_once_files, format_cleanup_result
 from .config import load_config
 from .email_builder import build_email
 from .mailer import prepare_outbox, send_emails
@@ -15,13 +16,29 @@ from .resume import choose_resume
 def main() -> None:
     parser = argparse.ArgumentParser(description="根据群消息自动生成并发送简历投递邮件。")
     parser.add_argument("--config", default="config.json", help="配置文件路径，默认 config.json")
-    parser.add_argument("--messages", required=True, help="微信群消息文本文件路径")
+    parser.add_argument("--messages", help="微信群消息文本文件路径")
     parser.add_argument("--outbox", default="outbox", help="预览输出目录，默认 outbox")
     parser.add_argument("--send", action="store_true", help="真正发送邮件；不加时只生成预览")
     parser.add_argument("--limit", type=int, default=0, help="最多处理多少条岗位消息，0 表示不限制")
+    parser.add_argument("--cleanup-days", type=int, default=None, help="清理多少天前的一次性文件，例如 7")
+    parser.add_argument("--cleanup-only", action="store_true", help="只执行清理，不生成邮件")
+    parser.add_argument("--cleanup-dry-run", action="store_true", help="只展示会清理的数量，不实际删除")
     args = parser.parse_args()
 
     config = load_config(args.config)
+
+    if args.cleanup_days is not None:
+        cleanup_result = cleanup_once_files(config.base_dir, args.cleanup_days, dry_run=args.cleanup_dry_run)
+        print(format_cleanup_result(cleanup_result, dry_run=args.cleanup_dry_run))
+        if args.cleanup_only:
+            return
+
+    if args.cleanup_only:
+        raise SystemExit("--cleanup-only 需要同时指定 --cleanup-days。")
+
+    if not args.messages:
+        raise SystemExit("生成邮件需要指定 --messages；如果只清理，请使用 --cleanup-only --cleanup-days 7。")
+
     message_path = Path(args.messages).expanduser().resolve()
     if not message_path.exists():
         raise SystemExit(f"找不到消息文件：{message_path}")

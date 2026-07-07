@@ -1,8 +1,11 @@
 from pathlib import Path
 import json
+import os
 import tempfile
+import time
 import unittest
 
+from resume_sender.cleanup import cleanup_once_files
 from resume_sender.config import AppConfig, Candidate, EmailConfig, OpenAIConfig, ResumeProfile, load_config
 from resume_sender.email_builder import build_email, clean_ai_body
 from resume_sender.parser import parse_job_posts
@@ -10,6 +13,31 @@ from resume_sender.resume import choose_resume
 
 
 class CoreFlowTest(unittest.TestCase):
+    def test_cleanup_removes_old_once_files_but_keeps_resumes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            old_outbox_dir = base_dir / "outbox" / "old-run"
+            old_outbox_dir.mkdir(parents=True)
+            old_outbox_file = old_outbox_dir / "preview.eml"
+            old_outbox_file.write_text("mail", encoding="utf-8")
+            old_inbox_file = base_dir / "inbox" / "today.txt"
+            old_inbox_file.parent.mkdir()
+            old_inbox_file.write_text("jd", encoding="utf-8")
+            resume_file = base_dir / "resumes" / "template.pdf"
+            resume_file.parent.mkdir()
+            resume_file.write_text("resume", encoding="utf-8")
+
+            old_time = time.time() - 8 * 24 * 60 * 60
+            for path in (old_outbox_file, old_outbox_dir, old_inbox_file, old_inbox_file.parent, resume_file):
+                os.utime(path, (old_time, old_time))
+
+            result = cleanup_once_files(base_dir, days=7)
+
+            self.assertFalse(old_outbox_file.exists())
+            self.assertFalse(old_inbox_file.exists())
+            self.assertTrue(resume_file.exists())
+            self.assertIn(str(old_outbox_file.resolve()), result.removed_files)
+
     def test_clean_ai_body_removes_markdown(self) -> None:
         body = clean_ai_body("一、**行业研究能力**：使用 `Python` 完成分析\n- **竞品对标**：输出报告")
         self.assertNotIn("*", body)

@@ -103,6 +103,39 @@ export DASHSCOPE_API_KEY="你的百炼 API Key"
 
 如果 JD 没有要求附件命名，默认也使用同样格式，并加上 `.pdf` 后缀。
 
+## 清理一次性文件
+
+程序只会清理一次性文件夹：
+
+- `inbox/`：复制进来的群消息文本。
+- `outbox/`：生成的 `.eml` 预览、重命名 PDF 附件和摘要。
+
+不会清理 `resumes/`，也就是不会删除最初的三份模板简历。
+
+手动清理 7 天前的一次性文件：
+
+```bash
+python3 -m resume_sender --config config.json --cleanup-only --cleanup-days 7
+```
+
+先预览会清理多少文件，不实际删除：
+
+```bash
+python3 -m resume_sender --config config.json --cleanup-only --cleanup-days 7 --cleanup-dry-run
+```
+
+也可以在每次生成邮件前顺手清理 7 天前的一次性文件：
+
+```bash
+python3 -m resume_sender --config config.json --messages inbox/today.txt --cleanup-days 7
+```
+
+如果想让 macOS 每 7 天自动执行一次，可以用 `crontab -e` 加入类似下面这一行：
+
+```cron
+0 9 */7 * * cd "/Users/你的用户名/Documents/自动投简历邮箱" && /usr/bin/python3 -m resume_sender --config config.json --cleanup-only --cleanup-days 7
+```
+
 ## 安全说明
 
 - 默认不会发送邮件，只生成预览。
