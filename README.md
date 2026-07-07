@@ -55,6 +55,20 @@ python3 -m resume_sender --config config.json --messages inbox/today.txt
 - 按 JD 要求或默认规则重命名后的简历 PDF
 - `run_summary.json` 本次运行摘要
 
+也可以直接从 macOS 剪贴板读取 JD：
+
+```bash
+python3 -m resume_sender --config config.json --from-clipboard
+```
+
+更省事的方式是复制微信群 JD 后运行：
+
+```bash
+./投递预览
+```
+
+这个脚本会读取剪贴板、保存到 `inbox/clipboard.txt`，并生成邮件预览。
+
 ### 4. 真正发送邮件
 
 先设置授权码环境变量，名字要和 `config.json` 里的 `password_env` 一致：
@@ -63,6 +77,14 @@ python3 -m resume_sender --config config.json --messages inbox/today.txt
 export SMTP_PASSWORD="你的邮箱授权码"
 python3 -m resume_sender --config config.json --messages inbox/today.txt --send
 ```
+
+如果刚刚是用 `./投递预览` 生成的预览，确认无误后可以运行：
+
+```bash
+./确认发送
+```
+
+它会发送 `inbox/clipboard.txt` 对应的那条 JD，不会重新读取剪贴板，避免误发。
 
 ## 可选：使用阿里云百炼生成更贴合的正文
 

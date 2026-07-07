@@ -6,6 +6,7 @@ import json
 import sys
 
 from .cleanup import cleanup_once_files, format_cleanup_result
+from .clipboard import read_clipboard_text, save_clipboard_text
 from .config import load_config
 from .email_builder import build_email
 from .mailer import prepare_outbox, send_emails
@@ -17,6 +18,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="根据群消息自动生成并发送简历投递邮件。")
     parser.add_argument("--config", default="config.json", help="配置文件路径，默认 config.json")
     parser.add_argument("--messages", help="微信群消息文本文件路径")
+    parser.add_argument("--from-clipboard", action="store_true", help="从 macOS 剪贴板读取 JD 并保存到 inbox/clipboard.txt")
     parser.add_argument("--outbox", default="outbox", help="预览输出目录，默认 outbox")
     parser.add_argument("--send", action="store_true", help="真正发送邮件；不加时只生成预览")
     parser.add_argument("--limit", type=int, default=0, help="最多处理多少条岗位消息，0 表示不限制")
@@ -36,10 +38,18 @@ def main() -> None:
     if args.cleanup_only:
         raise SystemExit("--cleanup-only 需要同时指定 --cleanup-days。")
 
-    if not args.messages:
+    if args.from_clipboard:
+        try:
+            clipboard_text = read_clipboard_text()
+            message_path = save_clipboard_text(config.base_dir, clipboard_text)
+        except (RuntimeError, ValueError) as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"已从剪贴板读取 JD，并保存到：{message_path}")
+    elif args.messages:
+        message_path = Path(args.messages).expanduser().resolve()
+    else:
         raise SystemExit("生成邮件需要指定 --messages；如果只清理，请使用 --cleanup-only --cleanup-days 7。")
 
-    message_path = Path(args.messages).expanduser().resolve()
     if not message_path.exists():
         raise SystemExit(f"找不到消息文件：{message_path}")
 

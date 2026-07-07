@@ -6,6 +6,7 @@ import time
 import unittest
 
 from resume_sender.cleanup import cleanup_once_files
+from resume_sender.clipboard import save_clipboard_text
 from resume_sender.config import AppConfig, Candidate, EmailConfig, OpenAIConfig, ResumeProfile, load_config
 from resume_sender.email_builder import build_email, clean_ai_body
 from resume_sender.parser import parse_job_posts
@@ -13,6 +14,19 @@ from resume_sender.resume import choose_resume
 
 
 class CoreFlowTest(unittest.TestCase):
+    def test_save_clipboard_text_writes_inbox_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = save_clipboard_text(Path(temp_dir), "岗位：测试\n邮箱：hr@example.com")
+
+            self.assertEqual(path.name, "clipboard.txt")
+            self.assertEqual(path.parent.name, "inbox")
+            self.assertIn("hr@example.com", path.read_text(encoding="utf-8"))
+
+    def test_save_clipboard_text_rejects_empty_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(ValueError):
+                save_clipboard_text(Path(temp_dir), "  ")
+
     def test_cleanup_removes_old_once_files_but_keeps_resumes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)

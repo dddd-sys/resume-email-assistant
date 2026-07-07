@@ -1,0 +1,5 @@
+#!/bin/zsh
+set -e
+
+cd "$(dirname "$0")"
+python3 -m resume_sender --config config.json --messages inbox/clipboard.txt --send --cleanup-days 7
