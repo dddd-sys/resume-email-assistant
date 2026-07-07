@@ -11,6 +11,7 @@ from .config import load_config
 from .email_builder import build_email
 from .mailer import prepare_outbox, send_emails
 from .parser import parse_job_posts
+from .preview import find_latest_preview, open_preview, render_preview
 from .resume import choose_resume
 
 
@@ -25,9 +26,23 @@ def main() -> None:
     parser.add_argument("--cleanup-days", type=int, default=None, help="清理多少天前的一次性文件，例如 7")
     parser.add_argument("--cleanup-only", action="store_true", help="只执行清理，不生成邮件")
     parser.add_argument("--cleanup-dry-run", action="store_true", help="只展示会清理的数量，不实际删除")
+    parser.add_argument("--latest-preview", action="store_true", help="打开最新生成的 .eml 邮件预览")
     args = parser.parse_args()
 
     config = load_config(args.config)
+
+    if args.latest_preview:
+        try:
+            preview_path = find_latest_preview(Path(args.outbox).expanduser().resolve())
+            opened = open_preview(preview_path)
+            print(render_preview(preview_path))
+        except FileNotFoundError as exc:
+            raise SystemExit(str(exc)) from exc
+        if opened:
+            print(f"\n已尝试打开最新预览：{preview_path}")
+        else:
+            print(f"\n系统没有可自动打开 .eml 的应用，已在终端显示预览内容：{preview_path}")
+        return
 
     if args.cleanup_days is not None:
         cleanup_result = cleanup_once_files(config.base_dir, args.cleanup_days, dry_run=args.cleanup_dry_run)

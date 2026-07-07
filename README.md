@@ -69,6 +69,20 @@ python3 -m resume_sender --config config.json --from-clipboard
 
 这个脚本会读取剪贴板、保存到 `inbox/clipboard.txt`，并生成邮件预览。
 
+打开最新 `.eml` 预览：
+
+```bash
+./查看预览
+```
+
+等同于：
+
+```bash
+python3 -m resume_sender --config config.json --latest-preview
+```
+
+如果系统没有可自动打开 `.eml` 的应用，程序会直接在终端显示邮件标题、收件人、正文和附件名。
+
 ### 4. 真正发送邮件
 
 先设置授权码环境变量，名字要和 `config.json` 里的 `password_env` 一致：

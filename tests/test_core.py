@@ -1,4 +1,5 @@
 from pathlib import Path
+from email.message import EmailMessage
 import json
 import os
 import tempfile
@@ -10,10 +11,49 @@ from resume_sender.clipboard import save_clipboard_text
 from resume_sender.config import AppConfig, Candidate, EmailConfig, OpenAIConfig, ResumeProfile, load_config
 from resume_sender.email_builder import build_email, clean_ai_body
 from resume_sender.parser import parse_job_posts
+from resume_sender.preview import find_latest_preview, render_preview
 from resume_sender.resume import choose_resume
 
 
 class CoreFlowTest(unittest.TestCase):
+    def test_find_latest_preview_returns_newest_eml(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            outbox_dir = Path(temp_dir) / "outbox"
+            older = outbox_dir / "old" / "mail.eml"
+            newer = outbox_dir / "new" / "mail.eml"
+            older.parent.mkdir(parents=True)
+            newer.parent.mkdir(parents=True)
+            older.write_text("old", encoding="utf-8")
+            newer.write_text("new", encoding="utf-8")
+            old_time = time.time() - 60
+            new_time = time.time()
+            os.utime(older, (old_time, old_time))
+            os.utime(newer, (new_time, new_time))
+
+            self.assertEqual(find_latest_preview(outbox_dir), newer)
+
+    def test_render_preview_decodes_eml(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            message = EmailMessage()
+            message["From"] = "me@example.com"
+            message["To"] = "hr@example.com"
+            message["Subject"] = "测试标题"
+            message.set_content("您好，这是正文。")
+            message.add_attachment(
+                b"pdf",
+                maintype="application",
+                subtype="pdf",
+                filename="resume.pdf",
+            )
+            path = Path(temp_dir) / "mail.eml"
+            path.write_bytes(message.as_bytes())
+
+            preview = render_preview(path)
+
+        self.assertIn("测试标题", preview)
+        self.assertIn("您好，这是正文。", preview)
+        self.assertIn("resume.pdf", preview)
+
     def test_save_clipboard_text_writes_inbox_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = save_clipboard_text(Path(temp_dir), "岗位：测试\n邮箱：hr@example.com")
