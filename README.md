@@ -64,7 +64,7 @@ python3 -m resume_sender --config config.json --from-clipboard
 更省事的方式是复制微信群 JD 后运行：
 
 ```bash
-./投递预览
+./生成预览
 ```
 
 这个脚本会读取剪贴板、保存到 `inbox/clipboard.txt`，并生成邮件预览。
@@ -92,7 +92,7 @@ export SMTP_PASSWORD="你的邮箱授权码"
 python3 -m resume_sender --config config.json --messages inbox/today.txt --send
 ```
 
-如果刚刚是用 `./投递预览` 生成的预览，确认无误后可以运行：
+如果刚刚是用 `./生成预览` 生成的预览，确认无误后可以运行：
 
 ```bash
 ./确认发送
