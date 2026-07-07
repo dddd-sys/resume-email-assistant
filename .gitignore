@@ -1,0 +1,9 @@
+config.json
+outbox/
+inbox/
+resumes/
+.pycache_run/
+__pycache__/
+*.pyc
+.env
+.DS_Store

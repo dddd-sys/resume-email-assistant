@@ -1,0 +1,91 @@
+{
+  "candidate": {
+    "name": "你的姓名",
+    "school": "你的学校",
+    "major": "请填写专业",
+    "grade": "请填写年级",
+    "availability": "随时到岗",
+    "weekly_attendance": "每周到岗5天",
+    "duration": "6个月及以上"
+  },
+  "email": {
+    "smtp_host": "smtp.qq.com",
+    "smtp_port": 465,
+    "use_ssl": true,
+    "username": "your_email@example.com",
+    "password_env": "SMTP_PASSWORD",
+    "from_name": "你的姓名"
+  },
+  "openai": {
+    "enabled": false,
+    "provider": "bailian",
+    "model": "qwen-plus",
+    "api_key_env": "DASHSCOPE_API_KEY",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  },
+  "resumes": [
+    {
+      "id": "business_analysis",
+      "label": "商业分析",
+      "path": "resumes/你的姓名-商业分析.pdf",
+      "keywords": [
+        "商业分析",
+        "数据分析",
+        "SQL",
+        "Python",
+        "Excel",
+        "Tableau",
+        "Power BI",
+        "用户分析",
+        "增长",
+        "策略分析",
+        "经营分析",
+        "指标体系",
+        "A/B测试"
+      ],
+      "summary": "适合商业分析、经营分析、数据分析、战略分析相关岗位。突出数据分析、指标拆解、业务洞察、报告呈现和跨团队沟通能力。"
+    },
+    {
+      "id": "ai_product_manager",
+      "label": "AI产品经理",
+      "path": "resumes/你的姓名-AI产品经理.pdf",
+      "keywords": [
+        "AI产品",
+        "产品经理",
+        "大模型",
+        "AIGC",
+        "LLM",
+        "Prompt",
+        "需求分析",
+        "用户调研",
+        "原型",
+        "PRD",
+        "竞品分析",
+        "产品规划",
+        "数据驱动"
+      ],
+      "summary": "适合 AI 产品经理、产品实习生、大模型应用、AIGC 产品相关岗位。突出需求分析、用户洞察、产品设计、AI 应用理解和跨职能协作。"
+    },
+    {
+      "id": "finance_research_strategy",
+      "label": "金融研究/战略",
+      "path": "resumes/你的姓名-金融研究战略.pdf",
+      "keywords": [
+        "金融研究",
+        "行业研究",
+        "战略",
+        "投研",
+        "证券",
+        "基金",
+        "财务分析",
+        "估值",
+        "宏观",
+        "产业研究",
+        "商业模式",
+        "投资",
+        "尽调"
+      ],
+      "summary": "适合金融研究、行业研究、战略、投研、咨询研究相关岗位。突出研究框架、信息搜集、财务与行业分析、逻辑表达和报告写作能力。"
+    }
+  ]
+}
