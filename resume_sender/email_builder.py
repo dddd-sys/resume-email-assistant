@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import os
 import re
 
@@ -23,22 +24,9 @@ class BuiltEmail:
     body_source: str
 
 
-def build_email(config: AppConfig, post: JobPost, match: ResumeMatch) -> BuiltEmail:
-    subject_format = post.subject_format or post.attachment_format
-    subject = fill_format(
-        subject_format,
-        post.title,
-        config.candidate,
-        default_without_extension=True,
-    )
-    attachment_stem = fill_format(
-        post.attachment_format,
-        post.title,
-        config.candidate,
-        default_without_extension=True,
-    )
-    attachment_name = ensure_pdf_name(attachment_stem)
-    body, body_source = generate_body(config, post, match)
+def build_email(config: AppConfig, post: JobPost, match: ResumeMatch, ai_prompt: str = "") -> BuiltEmail:
+    subject, attachment_name = build_email_names(config, post)
+    body, body_source = generate_body(config, post, match, ai_prompt=ai_prompt)
 
     return BuiltEmail(
         to=post.emails,
@@ -53,14 +41,125 @@ def build_email(config: AppConfig, post: JobPost, match: ResumeMatch) -> BuiltEm
     )
 
 
+def build_email_names(config: AppConfig, post: JobPost) -> tuple[str, str]:
+    subject_format = post.subject_format or post.attachment_format
+    attachment_format = post.attachment_format or post.subject_format
+
+    if not subject_format and not attachment_format:
+        subject = fill_format(None, post.title, config.candidate, default_without_extension=True)
+        attachment_name = ensure_pdf_name(fill_format(None, post.title, config.candidate, default_without_extension=True))
+        return subject, attachment_name
+
+    ai_names = generate_names_with_openai(config, post, subject_format, attachment_format)
+    if ai_names:
+        return ai_names
+
+    subject = fill_format(subject_format, post.title, config.candidate, default_without_extension=True)
+    attachment_stem = fill_format(attachment_format, post.title, config.candidate, default_without_extension=True)
+    return subject, ensure_pdf_name(attachment_stem)
+
+
+def generate_names_with_openai(
+    config: AppConfig,
+    post: JobPost,
+    subject_format: str | None,
+    attachment_format: str | None,
+) -> tuple[str, str] | None:
+    if not config.openai.enabled:
+        return None
+
+    api_key = os.getenv(config.openai.api_key_env)
+    if not api_key:
+        return None
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None
+
+    candidate = config.candidate
+    prompt = f"""
+请根据 JD 给出的邮件标题/简历命名格式，生成最终可直接使用的邮件标题和附件 PDF 文件名。
+
+规则：
+- 必须基于 JD 格式填充候选人真实信息，不要原样保留“姓名/学校/年级/x/几”等占位词。
+- 如果只有邮件标题格式或只有简历命名格式，两者都按这个格式生成。
+- 如果格式里有固定前缀，例如【实习】，必须保留。
+- 如果格式里要求岗位名称，填入清洗后的岗位名称。
+- 不要编造候选人没有的信息。
+- 附件名必须以 .pdf 结尾，邮件标题不要以 .pdf 结尾。
+- 只输出 JSON，不要解释。
+
+岗位名称：{post.title}
+邮件标题格式：{subject_format or attachment_format or "无"}
+简历命名格式：{attachment_format or subject_format or "无"}
+
+候选人信息：
+- 姓名：{candidate.name}
+- 学校：{candidate.school}
+- 专业：{candidate.major}
+- 年级：{candidate.grade}
+- 到岗时间：{candidate.availability}
+- 每周到岗：{candidate.weekly_attendance}
+- 实习时长：{candidate.duration}
+
+JD 原文：
+{post.raw_text}
+
+JSON 格式：
+{{"subject":"邮件标题","attachment_name":"附件PDF文件名.pdf"}}
+""".strip()
+
+    try:
+        client_kwargs = {"api_key": api_key}
+        if config.openai.base_url:
+            client_kwargs["base_url"] = config.openai.base_url
+        client = OpenAI(**client_kwargs)
+        response = client.chat.completions.create(
+            model=config.openai.model,
+            messages=[
+                {"role": "system", "content": "你是严谨的求职邮件命名助手，只基于给定格式和候选人信息生成标题与附件名。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0,
+        )
+        raw = response.choices[0].message.content or ""
+        data = parse_json_object(raw)
+        subject = sanitize_filename_piece(str(data.get("subject", "")))
+        attachment_name = ensure_pdf_name(str(data.get("attachment_name", "")))
+        if subject.lower().endswith(".pdf"):
+            subject = subject[:-4]
+        if subject and attachment_name:
+            return subject, attachment_name
+    except Exception:
+        return None
+    return None
+
+
+def parse_json_object(value: str) -> dict:
+    cleaned = value.strip()
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    match = re.search(r"\{.*\}", cleaned, flags=re.S)
+    if match:
+        cleaned = match.group(0)
+    parsed = json.loads(cleaned)
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def fill_format(format_text: str | None, job_title: str, candidate: Candidate, default_without_extension: bool) -> str:
     if not format_text:
         result = f"{job_title}-{candidate.name}-{candidate.school}-{candidate.availability}-{candidate.duration}"
     else:
         result = format_text
+        weekly_days = extract_number(candidate.weekly_attendance)
         replacements = {
             "岗位名称": job_title,
+            "岗位职责": job_title,
+            "应聘岗位": job_title,
+            "投递岗位": job_title,
             "岗位名": job_title,
+            "岗位": job_title,
             "职位名称": job_title,
             "职位": job_title,
             "姓名": candidate.name,
@@ -80,13 +179,56 @@ def fill_format(format_text: str | None, job_title: str, candidate: Candidate, d
             "专业": candidate.major,
             "年级": candidate.grade,
         }
-        for key, value in replacements.items():
-            result = result.replace(key, value)
+        if weekly_days:
+            replacements.update(
+                {
+                    "一周x天": f"一周{weekly_days}天",
+                    "一周X天": f"一周{weekly_days}天",
+                    "一周几天": f"一周{weekly_days}天",
+                    "每周x天": f"每周{weekly_days}天",
+                    "每周X天": f"每周{weekly_days}天",
+                    "每周几天": f"每周{weekly_days}天",
+                    "每周到岗x天": f"每周到岗{weekly_days}天",
+                    "每周到岗X天": f"每周到岗{weekly_days}天",
+                    "每周到岗几天": f"每周到岗{weekly_days}天",
+                    "每周出勤x天": f"每周出勤{weekly_days}天",
+                    "每周出勤X天": f"每周出勤{weekly_days}天",
+                    "每周出勤几天": f"每周出勤{weekly_days}天",
+                }
+            )
+        tokens = {}
+        for index, key in enumerate(sorted(replacements, key=len, reverse=True)):
+            token = f"\0{index}\0"
+            tokens[token] = replacements[key]
+            result = result.replace(key, token)
+        for token, value in tokens.items():
+            result = result.replace(token, value)
+        result = expand_loose_placeholders(result, candidate)
         result = re.sub(r"\s+", "", result)
     result = sanitize_filename_piece(result)
     if default_without_extension and result.lower().endswith(".pdf"):
         result = result[:-4]
     return result
+
+
+def expand_loose_placeholders(value: str, candidate: Candidate) -> str:
+    weekly_days = extract_number(candidate.weekly_attendance)
+    duration = candidate.duration
+
+    value = re.sub(r"大[xX几]", candidate.grade, value)
+    if weekly_days:
+        value = re.sub(r"一周\s*[xX几]\s*天", f"一周{weekly_days}天", value)
+        value = re.sub(r"每周\s*[xX几]\s*天", f"每周{weekly_days}天", value)
+        value = re.sub(r"每周到岗\s*[xX几]\s*天", f"每周到岗{weekly_days}天", value)
+        value = re.sub(r"每周出勤\s*[xX几]\s*天", f"每周出勤{weekly_days}天", value)
+    value = re.sub(r"实习\s*[xX几]\s*个?月(?:及以上|以上)?", f"实习{duration}", value)
+    value = re.sub(r"[xX几]\s*个?月(?:及以上|以上)?", duration, value)
+    return value
+
+
+def extract_number(value: str) -> str:
+    match = re.search(r"\d+(?:\.\d+)?", value)
+    return match.group(0) if match else ""
 
 
 def ensure_pdf_name(value: str) -> str:
@@ -96,15 +238,15 @@ def ensure_pdf_name(value: str) -> str:
     return value
 
 
-def generate_body(config: AppConfig, post: JobPost, match: ResumeMatch) -> tuple[str, str]:
+def generate_body(config: AppConfig, post: JobPost, match: ResumeMatch, ai_prompt: str = "") -> tuple[str, str]:
     if config.openai.enabled:
-        generated = _generate_body_with_openai(config, post, match)
+        generated = _generate_body_with_openai(config, post, match, ai_prompt=ai_prompt)
         if generated:
             return ensure_body_greeting(generated), "ai"
     return ensure_body_greeting(_generate_body_locally(config, post, match)), "local_template"
 
 
-def _generate_body_with_openai(config: AppConfig, post: JobPost, match: ResumeMatch) -> str | None:
+def _generate_body_with_openai(config: AppConfig, post: JobPost, match: ResumeMatch, ai_prompt: str = "") -> str | None:
     api_key = os.getenv(config.openai.api_key_env)
     if not api_key:
         return None
@@ -116,7 +258,42 @@ def _generate_body_with_openai(config: AppConfig, post: JobPost, match: ResumeMa
 
     candidate = config.candidate
     resume_text = prepare_resume_context(extract_pdf_text(match.resume.path), post.raw_text)
-    prompt = f"""
+    prompt = build_openai_body_prompt(config, post, match, resume_text, ai_prompt=ai_prompt)
+
+    try:
+        client_kwargs = {"api_key": api_key}
+        if config.openai.base_url:
+            client_kwargs["base_url"] = config.openai.base_url
+        client = OpenAI(**client_kwargs)
+        response = client.chat.completions.create(
+            model=config.openai.model,
+            messages=[
+                {"role": "system", "content": "你是严谨的中文求职邮件写作助手，会基于简历事实改写，不编造经历。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.25,
+        )
+        return clean_ai_body(response.choices[0].message.content or "")
+    except Exception:
+        return None
+
+
+def build_openai_body_prompt(
+    config: AppConfig,
+    post: JobPost,
+    match: ResumeMatch,
+    resume_text: str,
+    ai_prompt: str = "",
+) -> str:
+    candidate = config.candidate
+    extra_instruction = ai_prompt.strip()
+    extra_prompt_text = (
+        f"\n本次额外写作提示：\n{extra_instruction}\n"
+        "请在不编造经历的前提下尽量吸收这个提示；如果提示和简历/JD 无关或缺少事实支撑，请弱化处理。\n"
+        if extra_instruction
+        else ""
+    )
+    return f"""
 请为一封中文求职投递邮件写正文，要求简洁、自然、职业化。
 
 非常重要：
@@ -127,6 +304,7 @@ def _generate_body_with_openai(config: AppConfig, post: JobPost, match: ResumeMa
 - 不要编造简历原文中没有的公司、项目、数据、奖项、实习经历或量化成果。
 - 如果简历原文没有足够细节，就保守表达，不要夸张。
 - 不要使用 Markdown 格式，不要输出星号、加粗、标题符号或代码块。
+{extra_prompt_text}
 
 候选人：
 - 姓名：{candidate.name}
@@ -154,23 +332,6 @@ def _generate_body_with_openai(config: AppConfig, post: JobPost, match: ResumeMa
 4. 说明附件已附简历，并礼貌收尾。
 控制在 250-380 字，只输出纯文本邮件正文，不要输出标题，不要使用 Markdown。
 """.strip()
-
-    try:
-        client_kwargs = {"api_key": api_key}
-        if config.openai.base_url:
-            client_kwargs["base_url"] = config.openai.base_url
-        client = OpenAI(**client_kwargs)
-        response = client.chat.completions.create(
-            model=config.openai.model,
-            messages=[
-                {"role": "system", "content": "你是严谨的中文求职邮件写作助手，会基于简历事实改写，不编造经历。"},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.25,
-        )
-        return clean_ai_body(response.choices[0].message.content or "")
-    except Exception:
-        return None
 
 
 def _generate_body_locally(config: AppConfig, post: JobPost, match: ResumeMatch) -> str:

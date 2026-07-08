@@ -7,10 +7,10 @@ import time
 import unittest
 
 from resume_sender.cleanup import cleanup_once_files
-from resume_sender.clipboard import save_clipboard_text
+from resume_sender.clipboard import read_saved_ai_prompt, save_ai_prompt, save_clipboard_text
 from resume_sender.config import AppConfig, Candidate, EmailConfig, OpenAIConfig, ResumeProfile, load_config
-from resume_sender.email_builder import build_email, clean_ai_body, ensure_body_greeting
-from resume_sender.parser import parse_job_posts
+from resume_sender.email_builder import build_email, build_openai_body_prompt, clean_ai_body, ensure_body_greeting
+from resume_sender.parser import find_posts_without_email, parse_job_posts
 from resume_sender.preview import find_latest_preview, render_preview
 from resume_sender.resume import choose_resume
 
@@ -75,6 +75,47 @@ class CoreFlowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaises(ValueError):
                 save_clipboard_text(Path(temp_dir), "  ")
+
+    def test_save_and_read_ai_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+
+            save_ai_prompt(base_dir, "请强调脉冲 Web3 交易所经历")
+
+            self.assertEqual(read_saved_ai_prompt(base_dir), "请强调脉冲 Web3 交易所经历")
+
+    def test_find_posts_without_email_for_web_apply_jd(self) -> None:
+        text = """
+美团Keeta中东配送商业分析实习生
+岗位职责:
+1. 进行业务经营数据建设工作，包括数据提取、看板构建等工作。
+岗位要求:
+1. 有管理咨询、O2O、电商、即时配送物流等相关行业商业分析实习经验。
+【投递方式】
+streetintern.com
+https://mp.weixin.qq.com/s/P1E5bCl-u_AbYBZsW3nbig
+""".strip()
+
+        self.assertEqual(parse_job_posts(text), [])
+        self.assertEqual(find_posts_without_email(text), ["美团Keeta中东配送商业分析实习生"])
+
+    def test_build_openai_body_prompt_includes_extra_instruction(self) -> None:
+        text = "岗位：Web3 产品实习生\n职责：交易所业务分析、用户增长。\n邮箱：hr@example.com"
+        post = parse_job_posts(text)[0]
+        config = _config()
+        match = choose_resume(post.raw_text, config.resumes)
+
+        prompt = build_openai_body_prompt(
+            config,
+            post,
+            match,
+            resume_text="脉冲计算科技 Web3 交易所业务分析经历",
+            ai_prompt="可以强调我在脉冲 Web3 交易所的经历符合 JD 要求的 Web3",
+        )
+
+        self.assertIn("本次额外写作提示", prompt)
+        self.assertIn("脉冲 Web3 交易所", prompt)
+        self.assertIn("不编造经历", prompt)
 
     def test_cleanup_removes_old_once_files_but_keeps_resumes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -199,6 +240,98 @@ class CoreFlowTest(unittest.TestCase):
 
         self.assertEqual(built.subject, "大模型商分-张三-示例大学-金融学-研一-6个月及以上")
         self.assertEqual(built.attachment_name, "大模型商分-张三-示例大学-金融学-研一-6个月及以上.pdf")
+
+    def test_title_skips_section_headers(self) -> None:
+        text = """
+深圳头部互联网银行招聘AI产品运营日常实习生
+【岗位职责】
+1、协助产品运营的基础工作，包括用户调研、需求分析、需求文档撰写。
+【岗位要求】
+有 web3 相关经验优先
+【邮件投递】recruiting@example.com
+""".strip()
+
+        post = parse_job_posts(text)[0]
+
+        self.assertEqual(post.title, "AI产品运营日常实习生")
+
+    def test_title_skips_work_location_section_header(self) -> None:
+        text = """
+深圳头部互联网银行招聘AI产品运营日常实习生
+【岗位职责】
+协助产品运营、用户调研、需求分析。
+【岗位要求】
+有 web3 相关经验优先
+【工作地】深圳前海
+【到岗工作】尽快到岗，一周工作至少4天。
+【邮件投递】oliviaguan@example.com
+""".strip()
+
+        post = parse_job_posts(text)[0]
+
+        self.assertEqual(post.title, "AI产品运营日常实习生")
+
+    def test_title_drops_forwarding_note_and_company_prefix(self) -> None:
+        text = """
+（帮组内招实习生）携程-产品实习生（国际）
+岗位职责：支持国际产品需求分析和用户调研。
+投递邮箱：recruiting@example.com
+""".strip()
+
+        post = parse_job_posts(text)[0]
+
+        self.assertEqual(post.title, "产品实习生（国际）")
+
+    def test_format_replaces_job_duty_placeholder_with_title(self) -> None:
+        text = """
+海外线下业务 GTM 实习生
+岗位职责：支持海外线下业务增长。
+请将简历命名为【岗位职责-姓名-学校-专业-年级】发送至recruiting@example.com
+""".strip()
+        post = parse_job_posts(text)[0]
+        config = _config()
+        match = choose_resume(post.raw_text, config.resumes)
+
+        built = build_email(config, post, match)
+
+        self.assertEqual(built.subject, "海外线下业务GTM实习生-张三-示例大学-金融学-研一")
+        self.assertEqual(built.attachment_name, "海外线下业务GTM实习生-张三-示例大学-金融学-研一.pdf")
+        self.assertIn("海外线下业务GTM实习生", built.body)
+
+    def test_subject_format_fills_loose_x_placeholders(self) -> None:
+        text = """
+AI产品运营日常实习生
+岗位职责：支持用户调研、需求分析和产品运营。
+邮件标题：姓名-学校-大x-一周x天-实习x个月
+附件命名：岗位名称-姓名-学校-每周到岗x天-x个月
+邮箱：recruiting@example.com
+""".strip()
+        post = parse_job_posts(text)[0]
+        config = _config()
+        match = choose_resume(post.raw_text, config.resumes)
+
+        built = build_email(config, post, match)
+
+        self.assertEqual(built.subject, "张三-示例大学-研一-一周5天-实习6个月及以上")
+        self.assertEqual(built.attachment_name, "AI产品运营日常实习生-张三-示例大学-每周到岗5天-6个月及以上.pdf")
+
+    def test_title_format_with_literal_prefix_is_filled_for_subject_and_attachment(self) -> None:
+        text = """
+产品经理实习生
+岗位职责
+1、负责门店履约全链路优化。
+投递：简历至zhangmingqing062@hellobike.com，标题格式【实习】姓名-学校-年级
+""".strip()
+        post = parse_job_posts(text)[0]
+        config = _config()
+        match = choose_resume(post.raw_text, config.resumes)
+
+        built = build_email(config, post, match)
+
+        self.assertEqual(post.subject_format, "【实习】姓名-学校-年级")
+        self.assertIsNone(post.attachment_format)
+        self.assertEqual(built.subject, "【实习】张三-示例大学-研一")
+        self.assertEqual(built.attachment_name, "【实习】张三-示例大学-研一.pdf")
 
 
 def _config() -> AppConfig:

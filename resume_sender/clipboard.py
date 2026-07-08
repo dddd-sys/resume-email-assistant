@@ -28,3 +28,18 @@ def save_clipboard_text(base_dir: Path, text: str, filename: str = "clipboard.tx
     message_path = inbox_dir / filename
     message_path.write_text(text.strip() + "\n", encoding="utf-8")
     return message_path
+
+
+def save_ai_prompt(base_dir: Path, prompt: str, filename: str = "ai_prompt.txt") -> Path:
+    inbox_dir = base_dir / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = inbox_dir / filename
+    prompt_path.write_text(prompt.strip() + ("\n" if prompt.strip() else ""), encoding="utf-8")
+    return prompt_path
+
+
+def read_saved_ai_prompt(base_dir: Path, filename: str = "ai_prompt.txt") -> str:
+    prompt_path = base_dir / "inbox" / filename
+    if not prompt_path.exists():
+        return ""
+    return prompt_path.read_text(encoding="utf-8").strip()
